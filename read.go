@@ -133,6 +133,11 @@ func (client *Client) ReadWithContext(ctx context.Context, tag string, data any)
 		return nil
 
 	case []bool:
+		if client.isInovance() {
+			// Inovance BOOL arrays follow different rules from the Logix bit
+			// packing; see inovance_read.go.
+			return client.invReadBoolSlice(ctx, tag, data)
+		}
 		elements := len(data)
 		count := elements / 32
 		if count*32 != elements {

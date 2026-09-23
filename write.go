@@ -128,6 +128,13 @@ func (client *Client) WriteWithContext(ctx context.Context, tag string, value an
 // field names don't matter but type names do.  go types will be converted to CIP types as appropriate, but any nested structs
 // must be named the same as the UDT on the plc.
 func (client *Client) write_udt(ctx context.Context, tag string, value any) error {
+	if client.isInovance() {
+		// The Logix UDT write carries a type encoding CRC and the 0xA0 struct
+		// code, neither of which the Inovance controllers use. Fail loudly
+		// instead of sending a frame the PLC cannot interpret. Whole struct
+		// writes are the P2 item of the Inovance plan.
+		return fmt.Errorf("writing struct tag %s: Inovance struct layout writes are not implemented yet; write the members individually for now", tag)
+	}
 	//service = 0x4D // cipService_Write
 	datatype := CIPTypeStruct
 	ioi, err := client.newIOI(tag, datatype)
@@ -235,6 +242,15 @@ func (client *Client) write_udt(ctx context.Context, tag string, value any) erro
 func (client *Client) write_single(ctx context.Context, tag string, value any) error {
 	//service = 0x4D // cipService_Write
 	datatype, _ := GoVarToCIPType(value)
+	if client.isInovance() {
+		// Inovance uses its own type codes (STRING 0xD0, STRUCT 0xA2) and
+		// knows about []bool, which the Logix mapping resolves to a struct.
+		invType, _, err := invGoVarToCIPType(value)
+		if err != nil {
+			return fmt.Errorf("problem determining the Inovance type of %T: %w", value, err)
+		}
+		datatype = invType
+	}
 	ioi, err := client.newIOI(tag, datatype)
 	if err != nil {
 		return fmt.Errorf("problem generating IOI. %w", err)
@@ -274,7 +290,11 @@ func (client *Client) write_single(ctx context.Context, tag string, value any) e
 		return fmt.Errorf("problem serializing ioi footer. %w", err)
 	}
 
-	err = reqitems[1].Serialize(value)
+	if client.isInovance() {
+		err = client.invSerializeValue(&reqitems[1], tag, value, datatype)
+	} else {
+		err = reqitems[1].Serialize(value)
+	}
 	if err != nil {
 		return fmt.Errorf("problem serializing value. %w", err)
 	}

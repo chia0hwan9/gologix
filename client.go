@@ -109,6 +109,13 @@ type Client struct {
 	// Replace this to capture logs
 	Logger        LoggerInterface
 	logger_ip_set bool
+
+	// Dialect selects the tag/encoding/layout dialect used by this client.
+	// The zero value is DialectLogix, so existing clients are unaffected.
+	Dialect Dialect
+
+	// Inovance carries the options used when Dialect is DialectInovance.
+	Inovance InovanceOptions
 }
 
 // NewClient creates a new PLC client with reasonable defaults for the given IP address.
