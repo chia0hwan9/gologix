@@ -1,3 +1,7 @@
 *.exe
 .vscode/*
 tests/test_config.json
+
+# 汇川《EIP 标签通信库使用说明》本地参考副本：文档页脚声明"版权所有·严禁复制"，
+# 本仓库是公开仓库，因此只本地留存、不入库。索引见 docs/resources.md。
+docs/汇川EIP标签通信库使用说明V2.0.2.8.pdf
