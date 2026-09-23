@@ -571,7 +571,13 @@ func (client *Client) ReadSingleWithContext(ctx context.Context, tag string, dat
 			if err != nil {
 				return nil, fmt.Errorf("problem reading element %d of %s: %w", i, tag, err)
 			}
-
+			if client.isInovance() && hdr2.Type == CIPTypeBOOL {
+				// Inovance BOOL struct members are 2 bytes wide (§4.4.2(1)), so
+				// element-wise reads carry a padding byte per element.
+				if err := invSkipBoolPadding(&items[1], client.invBoolElementSize(tag), tag, i); err != nil {
+					return nil, err
+				}
+			}
 		}
 		return value, nil
 
@@ -1069,6 +1075,12 @@ func (client *Client) readList(ctx context.Context, tags []tagDesc) ([]any, erro
 				value, err := readValue(rHdr.Type, myBytes)
 				if err != nil {
 					return nil, fmt.Errorf("problem reading tag %v: %w", tags[i], err)
+				}
+				if client.isInovance() && rHdr.Type == CIPTypeBOOL {
+					// Inovance BOOL struct members are 2 bytes wide (§4.4.2(1)).
+					if err := invSkipBoolPadding(myBytes, client.invBoolElementSize(tags[i].TagName), tags[i].TagName, respIndex); err != nil {
+						return nil, err
+					}
 				}
 				val[respIndex] = value
 			}

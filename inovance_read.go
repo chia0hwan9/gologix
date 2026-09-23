@@ -3,7 +3,45 @@ package gologix
 import (
 	"context"
 	"fmt"
+	"io"
 )
+
+// invBoolElementSize returns how many bytes one element of a BOOL read occupies
+// on the wire when the elements are read one at a time. Whole array reads go
+// through invReadBoolSlice instead, which has its own rules.
+//
+//	§4.2      top level BOOL[n]   1 byte per element (n elements -> n bytes)
+//	§4.4.2(1) BOOL struct member  2 bytes, LSB valid, 2-byte aligned
+//	§4.4.2(2) InoProShop align=1  1 byte per element
+//
+// The 2-byte case is why an element-wise read of a member carries a padding
+// byte after the value byte.
+func (client *Client) invBoolElementSize(tag string) int {
+	if client.inovanceAlign() == AlignInoProShop {
+		return 1
+	}
+	if invIsMemberTag(tag) {
+		return 2
+	}
+	return 1
+}
+
+// invSkipBoolPadding consumes the padding half of a 2-byte BOOL element.
+//
+// Unlike the code this replaces, a missing padding byte is reported instead of
+// being ignored: swallowing it would silently shift every following element.
+func invSkipBoolPadding(r io.Reader, elementSize int, tag string, index int) error {
+	skip := elementSize - 1
+	if skip <= 0 {
+		return nil
+	}
+	n, err := r.Read(make([]byte, skip))
+	if n != skip {
+		return fmt.Errorf("problem reading element %d of %s: expected %d padding byte(s) after the 2-byte BOOL, got %d (%v)",
+			index, tag, skip, n, err)
+	}
+	return nil
+}
 
 // invReadBoolSlice reads a BOOL[n] tag or a BOOL[n] struct member into data.
 //
