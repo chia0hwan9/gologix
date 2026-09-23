@@ -19,3 +19,10 @@
 - https://www.automation-pros.com/enip1/UserManual.pdf
 - https://rockwellautomation.custhelp.com/ci/okcsFattach/get/114390_5
 - https://www.rockwellautomation.com/content/dam/rockwell-automation/sites/downloads/pdf/developerguide.pdf
+
+# Local copies:
+
+- `汇川EIP标签通信库使用说明V2.0.2.8.pdf` — 汇川（Inovance）EIP 标签通信库使用说明 V2.0.2.8
+  （2026-01-27）。`DialectInovance` 的类型码、两套结构体对齐规则（§4.2/§4.4）与第 16/17 页的
+  数据排布表都出自这里；`inovance_pack_test.go` 的字节夹具即按那两张表编写。
+- `EtherNetIP Adapter Protocol API 12 EN.pdf` — ODVA EtherNet/IP Adapter 协议规范。

@@ -13,7 +13,17 @@ import (
 //
 // Reference: 汇川《EIP 标签通信库使用说明》V2.0.2.8, §4.4.1 / §4.4.2 / §4.4.3.
 // The byte level fixtures used by the tests come from the layout tables on
-// pages 16/17 of that document.
+// pages 16/17 of that document. A local copy lives at
+// docs/汇川EIP标签通信库使用说明V2.0.2.8.pdf (indexed in docs/resources.md).
+//
+// Status: the engine below is implemented and unit tested, but it is NOT wired
+// into any read/write path yet, and it is not needed for struct *member*
+// access - a member like "Stru.mem" is addressed by name and the PLC works out
+// the offset itself. Whole struct reads/writes are still refused on purpose:
+// write_udt returns an explicit error for the Inovance dialect, and a struct
+// read comes back with type 0xA2 which readValue does not know, so it fails
+// loudly instead of returning shifted bytes. Wiring this up is the P2 item
+// "struct whole-tag access".
 //
 // AlignDefault (AT_DEFAULT, 0x00) - what the Easy series / AutoShop uses,
 // where no struct alignment parameter can be configured:

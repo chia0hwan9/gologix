@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+// 标签路径默认沿用历史行为（全部小写）；汇川通道可以打开 KeepTagCase 保留原始大小写。
+func TestInovanceKeepTagCase(t *testing.T) {
+	build := func(c *Client, tag string) string {
+		t.Helper()
+		c.knownFirmware = 99 // 跳过固件探测（会走 GetAttributeSingle）
+		c.ioi_cache = make(map[string]*tagIOI)
+		ioi, err := c.newIOI(tag, CIPTypeDINT)
+		if err != nil {
+			t.Fatalf("newIOI(%q): %v", tag, err)
+		}
+		return ioi.Path
+	}
+
+	if got := build(NewClient("127.0.0.1"), "MyTag"); got != "mytag" {
+		t.Errorf("Logix 标签路径应小写, got %q", got)
+	}
+	if got := build(newInovanceClient(AlignDefault), "MyTag"); got != "mytag" {
+		t.Errorf("汇川默认应沿用历史小写行为, got %q", got)
+	}
+
+	keep := newInovanceClient(AlignDefault)
+	keep.Inovance.KeepTagCase = true
+	if got := build(keep, "MyTag"); got != "MyTag" {
+		t.Errorf("KeepTagCase=true 应保留原始大小写, got %q", got)
+	}
+}
+
 func TestInvIsMemberTag(t *testing.T) {
 	tests := []struct {
 		tag  string

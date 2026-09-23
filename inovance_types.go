@@ -186,6 +186,10 @@ func invElemTypeOf(t reflect.Type) (CIPType, error) {
 // invNormalizeType maps a wire type code seen in a response to the Inovance
 // type this library works with, so the Inovance path never depends on the
 // Logix-only meanings of 0xA0/0xFF.
+//
+// Not wired yet: nothing outside the tests calls this today. It is the
+// response dispatch table for the P2 item "multi tag / response type
+// dispatch" (reading a whole struct answers with 0xA2, a string with 0xD0).
 func invNormalizeType(t CIPType) (CIPType, error) {
 	if _, ok := invResponseTypes[t]; ok {
 		return t, nil

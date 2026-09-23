@@ -113,8 +113,13 @@ func (client *Client) newIOI(tagpath string, datatype CIPType) (ioi *tagIOI, err
 	}
 	ioi = new(tagIOI)
 	// CIP doesn't care about case.  But we'll make it lowercase to match
-	// the encodings shown in 1756-PM020H-EN-P
-	tagpath = strings.ToLower(tagpath)
+	// the encodings shown in 1756-PM020H-EN-P.
+	// Inovance controllers resolve tags against their scanned symbol table, so
+	// a site that turns out to be case sensitive can opt out of this with
+	// InovanceOptions.KeepTagCase.
+	if !client.keepTagCase() {
+		tagpath = strings.ToLower(tagpath)
+	}
 
 	// on firmwares greater than 20, we can do some optimizations.
 	if client.firmware() > 20 {

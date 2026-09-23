@@ -67,21 +67,18 @@ func (a InovanceAlign) String() string {
 }
 
 // InovanceOptions carries the options used when Client.Dialect is
-// DialectInovance. The zero value is AlignDefault with lenient size checking.
+// DialectInovance. The zero value is AlignDefault with the historical tag path
+// handling (tag names are lower cased).
 type InovanceOptions struct {
 	// Align must match the alignment the PLC side is using. The two modes are
 	// not interchangeable and the PLC cannot switch back without a Run/Stop
 	// restart (documentation §7.13/§7.14).
 	Align InovanceAlign
 
-	// StrictSize makes writes fail locally (before the request is sent) when
-	// the payload length does not match the expected tag size. Without it the
-	// PLC answers with ERRR_WRITE_DATASIZE_UNCONSISTENT instead.
-	StrictSize bool
-
-	// KeepTagCase stops the client from lower casing tag paths. Tag names on
-	// Inovance controllers are matched against the scanned symbol table, so
-	// preserving the original spelling is safer.
+	// KeepTagCase stops the client from lower casing tag paths, which is what
+	// the library has always done (see newIOI). Inovance controllers resolve
+	// tags against their scanned symbol table, so if a site turns out to be
+	// case sensitive, set this to true.
 	KeepTagCase bool
 }
 
@@ -112,4 +109,11 @@ func (client *Client) inovanceAlign() InovanceAlign {
 		return client.Inovance.Align
 	}
 	return AlignDefault
+}
+
+// keepTagCase reports whether tag paths must keep their original spelling.
+// The default (false) preserves the library's historical behaviour of lower
+// casing every tag path before building an IOI.
+func (client *Client) keepTagCase() bool {
+	return client.Dialect == DialectInovance && client.Inovance.KeepTagCase
 }
