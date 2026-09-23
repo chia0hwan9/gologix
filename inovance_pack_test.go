@@ -268,8 +268,8 @@ func TestInovanceLayoutRejectsUnsupportedMembers(t *testing.T) {
 	}
 	if _, err := InovanceStructSize(withString{}, AlignDefault); err == nil {
 		t.Error("string member: expected an error")
-	} else if !strings.Contains(err.Error(), "STRING<N>") {
-		t.Errorf("string member: unexpected error %v", err)
+	} else if !strings.Contains(err.Error(), "byte array") {
+		t.Errorf("string member: 错误信息应引导改用字节数组, got %v", err)
 	}
 }
 

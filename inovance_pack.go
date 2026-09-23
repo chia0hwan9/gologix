@@ -188,7 +188,7 @@ func invLayoutOfField(f reflect.StructField, mode InovanceAlign) (invMember, err
 		m.size = nested.size * elems
 
 	case t.Kind() == reflect.String:
-		return m, fmt.Errorf("Inovance struct member %s: STRING<N> members are not supported yet (needs the declared maximum length, planned for P1)", f.Name)
+		return m, fmt.Errorf("Inovance struct member %s: STRING members are not supported; declare the member as a byte array (ARRAY[0..N-1] OF BYTE, WSTRING as ARRAY OF WORD) and use a [N]byte/[N]uint16 field instead", f.Name)
 
 	default:
 		ct, err := invTypeFromGoKind(t.Kind())

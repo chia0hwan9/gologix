@@ -33,7 +33,9 @@ func (client *Client) invSerializeValue(item *CIPItem, tag string, value any, da
 		return client.invSerializeBool(item, tag, rv)
 
 	case invTypeSTRING, invTypeWSTRING:
-		return fmt.Errorf("writing %s to %s is not supported yet (STRING/WSTRING support is planned for P1)",
+		// 汇川的原生 STRING(0xD0)/WSTRING(0xD5) 是变长编码，库不打算实现；
+		// 现场惯例是把字符串声明成字节数组，走 []byte / []int8 即可。
+		return fmt.Errorf("writing %s to %s is not supported by the Inovance dialect: declare the PLC variable as a byte array (ARRAY OF BYTE/SINT, WSTRING as ARRAY OF WORD) and write it as a []byte/[]int8/[]uint16 instead",
 			invDescribeType(datatype), tag)
 
 	case invTypeSTRUCT:

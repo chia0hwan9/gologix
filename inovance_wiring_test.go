@@ -140,8 +140,8 @@ func TestInovanceSerializeUnsupportedTypes(t *testing.T) {
 	if err == nil {
 		t.Fatal("string write: expected an error")
 	}
-	if !strings.Contains(err.Error(), "P1") {
-		t.Errorf("string write: unexpected error %v", err)
+	if !strings.Contains(err.Error(), "byte array") {
+		t.Errorf("string write: 错误信息应引导改用字节数组, got %v", err)
 	}
 
 	item = CIPItem{}
