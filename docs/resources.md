@@ -13,7 +13,10 @@
 - https://www.odva.org/wp-content/uploads/2020/05/PUB00070_Recommended-Functionality-for-EIP-Devices-v10.pdf
 - https://literature.rockwellautomation.com/idc/groups/literature/documents/qs/2080-qs002_-en-e.pdf
 - https://www.rockwellautomation.com/content/dam/rockwell-automation/sites/downloads/pdf/TypeEncode_CIPRW.pdf
-- https://assets.omron.eu/downloads/manual/en/v2/w506_nx_nj-series_cpu_unit_built-in_ethernet_ip_port_users_manual_en.pdf
+- https://files.omron.eu/downloads/latest/manual/en/w506_nj_nx-series_cpu_unit_built-in_ethernet_ip_port_users_manual_en.pdf
+  — Omron NJ/NX-series CPU Unit Built-in EtherNet/IP Port User's Manual（Cat. No. W506）。
+  旧的 `assets.omron.eu/.../v2/w506_nx_nj-series_...pdf` 链接已 404，2026-09 换成上面的地址。
+  §7 CIP Message Communications 是 Omron 变量访问规则的出处，见 `omron-nx-nj-eip.md`。
 - https://github.com/JeremyMedders/LogixLibraries
 - https://github.com/mikeav-soft/LogixTool/tree/master
 - https://www.automation-pros.com/enip1/UserManual.pdf
