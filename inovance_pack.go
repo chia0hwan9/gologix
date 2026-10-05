@@ -15,6 +15,8 @@ import (
 // The byte level fixtures used by the tests come from the layout tables on
 // pages 16/17 of that document. A local copy lives at
 // docs/汇川EIP标签通信库使用说明V2.0.2.8.pdf (indexed in docs/resources.md).
+// For a side by side comparison of every BOOL case (top level vs struct member,
+// Logix vs both Inovance alignments) see docs/bool-handling.md.
 //
 // Status: the engine below is implemented and unit tested, but it is NOT wired
 // into any read/write path yet, and it is not needed for struct *member*
