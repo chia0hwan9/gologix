@@ -471,9 +471,23 @@ func (client *Client) ReadSingleWithContext(ctx context.Context, tag string, dat
 	if len(items) != 2 {
 		return 0, fmt.Errorf("wrong Number of Items. Expected 2 but got %v", len(items))
 	}
+	// Classify the reply before deserializing it as a successful read result.
+	// A CIP error reply (for example "tag does not exist") is well formed but
+	// stops after the status header: no data type code, no data. Deserializing
+	// one into msgCIPReadResultData used to fail with io.ErrUnexpectedEOF and
+	// surface as "problem reading item 2's header. unexpected EOF", which made
+	// an application level error look like a broken connection. See
+	// ciperror.go.
+	if cipErr, isErrorReply := parseCIPErrorReply(items[1].Data); isErrorReply {
+		return nil, fmt.Errorf("read of %s: %w", tag, cipErr)
+	}
 	var hdr2 msgCIPReadResultData
 	err = items[1].DeSerialize(&hdr2)
 	if err != nil {
+		// Reaching this point means the reply bit was set and the general
+		// status was 0x00 (or PartialTransfer), so a failure here is a
+		// genuinely short or corrupt frame. Keep it distinguishable from the
+		// typed CIP errors above.
 		return 0, fmt.Errorf("problem reading item 2's header. %w", err)
 	}
 

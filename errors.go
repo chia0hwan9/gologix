@@ -6,9 +6,22 @@ import (
 )
 
 // Represents a CIP error.
+//
+// Code is the general status byte from a CIP reply and Extended is the first
+// additional status word when the reply carries one. An error of this type is
+// an application level rejection from the PLC, not a transport failure: the
+// session remains usable, so callers must not reconnect because of it.
 type CIPError struct {
 	Code     byte
 	Extended uint16
+}
+
+// Unwrap exposes the sentinel error matching Code, when there is one, so that
+// errors.Is(err, ErrCIPPathNotFound) works through the usual wrapping chain
+// (see ciperror.go for the sentinels). Returning nil means "no more specific
+// classification".
+func (err *CIPError) Unwrap() error {
+	return sentinelForStatus(CIPStatus(err.Code))
 }
 
 func (err *CIPError) Error() string {
