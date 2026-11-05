@@ -161,6 +161,22 @@
 > `CipOmronTagInfoService` + `SysmacCipChannel`，但两者都把 CRC 当作"从 PLC 读到的元数据"，
 > 这一点一致。
 
+### 6.1 现场实现参考（Sineva.PLCCommunication.SysmacGateway）
+
+同目录下的网关工程（C# + OMRON Compolet，生产代码）对上面几条提供了**行为级旁证**：
+
+| 事实 | 代码位置 |
+|---|---|
+| 单 bool 写 = **2 字节** `{1,0}` / `{0,0}` | `EIP1n3Compolet.cs`：`BIT_TRUE`/`BIT_FALSE` → `WriteSpecialSignal` → `remoteCompolet.WriteRawData(tag, buffer)` |
+| 单 bool 读 ≥ 2 字节，判 `buffer[0] > 0 \|\| buffer[1] > 0` | 同上 `ReadSpecialSignal` |
+| 连接用 **Class 3**、`ReceiveTimeLimit = 1000` | `remoteCompolet.ConnectionType = ConnectionType.Class3` |
+| `Path destination unknown` 被当作"**tag 未注册**"而不是连接故障 | `catch` 里 `ex.Message.StartsWith("Path destination unknown")` → 记 "Tag Not Regist" |
+| 每元素按 2 字节校验（`buffer.Length != size * 2`） | `EIPCommonCheck.cs`（注释代码） |
+| **Connection Manager 扩展状态码表**（0x0100–0x08xx，52 条）可直接借用 | `SinevaLocalCompolet.cs` 的 `ConnectionStatusCode` 列表；如 `0x0109 Invalid Connection Size`、`0x0111 Rpi Not Supported`、`0x0114 Vendor Id Or Product Code Mismatch` |
+
+注意：该网关自身**没有** CIP 报文级代码（Forward_Open/RegisterSession 全走 Compolet 的
+`ReadRawData`/`WriteRawData`），所以连接路径的确切字节仍然拿不到。
+
 ---
 
 ## 7. 参考与源码索引
