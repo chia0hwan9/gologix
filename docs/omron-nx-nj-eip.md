@@ -79,7 +79,7 @@
 
 | # | 差异 | 依据 | 影响 |
 |---|---|---|---|
-| 1 | 🔴 **连接路径必须清空 slot** | NJ/NX 无 backplane/slot；`[DLL]` Forward_Open 只带 `TConnectionPath` + RPI 参数 | gologix `NewClient` 默认 `Controller.Path = ParsePath("1,0")`，必须 `client.Controller.Path = &bytes.Buffer{}` |
+| 1 | 🔴 **连接路径必须清空 slot** | NJ/NX 无 backplane/slot；`[DLL]` Forward_Open 只带 `TConnectionPath` + RPI 参数（**确切字节在原生层拼装，托管程序集里看不到**，见 §6 末行） | gologix `NewClient` 默认 `Controller.Path = ParsePath("1,0")`，必须 `client.Controller.Path = &bytes.Buffer{}`（此时 Forward_Open 的 path 正好是 `20 02 24 01`） |
 | 2 | 🔴 **连接尺寸上限** | §7-1-2：UCMM 502 B；Class 3 `Forward_Open` 502 B；`Large_Forward_Open`：NX701 8192 B，其余 1994 B | gologix 默认 4000 → Large 被拒 → 回退 511（仍 > 502）→ 连接失败。必须显式设 ≤1994 或 ≤502 |
 | 3 | ✅ **无 Electronic Key** | `[DLL]` 无该字段 | 无需改动 |
 | 4 | ⚠️ UCMM 可绕开 1、2 | §7-1-2 | 作为"连接期风险最小"的备选方案 |
@@ -92,8 +92,8 @@
 | 6 | **结构体 CRC 由 PLC 提供，不是算出来的** | `[DLL]` 写请求用 `TagInfo.StructCrcCode`；`VariableTypeInstance` 从 PLC 属性流里解析出 `成员数(2) → nextID(2) → 嵌套类型ID(2) → CRC(2) → 类型名(1+UTF-8)`；`CIPUtil_CalculateCRC16` 是 P/Invoke 到原生 `CIPCoreWin32.dll`、**不走这条路** | ✅ **结论翻转**：gologix 不需要实现 CRC 算法，而是**读 PLC 的类型/标签信息拿 CRC**（`CipOmronTagInfoService`）。原"必须重写算法"作废 |
 | 7 | **数组下标语义** | `[DLL]` 下标 = 字面声明值 | ✅ gologix 现有解析即正确；`ARRAY[1..10]` 用 `arr[1]` 访问 |
 | 8 | **原生 STRING 有明确格式** | `[DLL]` 写请求：`0xD0` + addInfoLen=0 + elements(2) + **dataLen(2)** + data；`CipOmronWriteDataService` 对 `0xD0` 有单独分支 | ✅ 可实现（手册没写，但实现里有）。仍建议优先字节数组方案 |
-| 9 | **结构体成员布局可从 PLC 查** | `[DLL]` 变量类型对象带成员数与成员定义 | ✅ 不用猜 Sysmac Studio 对齐规则 |
-| 10 | **tag 枚举/类型发现存在** | `[DLL]` `CipOmronTagInfoService`（名→类型/CRC/尺寸）、`CipOmronTagNameService`；客户端缓存 `mVariableIdCache` | ✅ 原"无 Symbol Object → 枚举不可用"作废：能力等价，只是对象/服务不同 |
+| 9 | **结构体成员布局可从 PLC 查** | `[DLL]` `CipOmronTagInfoService::GetNestedInfo`：类型对象是一条**成员链**（`NestingVariableTypeInstanceID32` 起始，`NextInstanceID32` 迭代），每个成员带 name / DataType / NumberOfElements / StartArrayElements / **SizeInMemory**，**没有显式偏移** → 布局 = 按链顺序拼接各成员 SizeInMemory | ✅ 不用猜 Sysmac Studio 对齐规则 |
+| 10 | **tag 枚举/类型发现存在** | `[DLL]` `UploadInfo` 的完整链路：`TagNameServer`（名→实例ID，客户端缓存 `mVariableIdCache`）→ `Variable` 实例（DataType / NumberOfElements / StartArrayElements / Size / VariableTypeInstanceID）→ 若 `0xA3` 数组则取 `DataTypeOfArray` → 若类型 ID≠0 再读 Variable Type 实例（CRC + 成员链） | ✅ 原"无 Symbol Object → 枚举不可用"作废：能力等价，只是对象/服务不同 |
 | 11 | **变量可访问性** | §7-2-2 要求客户端读的远端变量有 Network Publish；§7-3 服务端未明写；错误码 `8007` | ⚠️ 实机确认 |
 | 12 | **大小写** | W506 未声明；Sysmac Studio 变量名区分大小写 | ⚠️ 需 `KeepTagCase` |
 | 13 | **多维数组元素顺序** | 手册：`Var[2][2]` → `[0][0],[0][1],[1][0],[1][1]`（最后一维最快） | ⚠️ Logix 侧顺序未验证，两者可能相反（静默错位） |
@@ -133,6 +133,8 @@
 | 7 | 变量名/成员名大小写敏感度 | 大小写变体试读 |
 | 8 | 结构体成员排布（尤其成员 BOOL 字节数） | 读类型对象 + 实测整读 |
 | 9 | `0xFF` 位数组在**读响应**里的类型码是否也是 0xFF | 抓包 |
+| 10 | **连接路径的确切字节** | 托管层确认不了（原生 `CIPCorePort.dll` 负责）；只能实测或抓 OMRON 客户端与 PLC 的 Forward_Open 报文 |
+| 11 | 成员 `SizeInMemory` 对 BOOL 成员是 1 还是 2 | 读一次结构体类型对象即可看到（`GetNestedInfo` 的成员链） |
 
 ---
 
@@ -152,6 +154,8 @@
 | BOOL 大小 | `CompoletDataManager`：`OmronBoolType`（`Size=2`，`GetBytes`→`{0/1,0}`） | 单 BOOL 2 字节 |
 | BOOL 数组 | `CompoletDataManager`：`CipOmronDataConverter.BoolsToBitArray`；`SysmacCompolet`：`BitArrayToWordData`/`WordDataToBitArray`、`BoolValueByteArrToBoolArr` | 整体访问改写类型 **0xFF**、16 位打包；指定元素数 1 字节/元素 |
 | 连接 | `CIPObjectLibrary`：`TConnectionPath`、`TNetConnectionParameters`、`ConnectionManagerInstance.ForwardOpen/LargeForwardOpen` | 无 electronic key；Forward_Open 0x54 / Large 0x5B |
+| 标签信息链 | `SysmacCipService`：`CipOmronTagInfoService::UploadInfo` / `GetNestedInfo` / `GetVariableInstanceId` | `TagNameServer`→`Variable` 实例→（`0xA3` 取 `DataTypeOfArray`）→`VariableTypeClass` 实例（CRC + `NumberOfMember` + 成员链） |
+| 连接路径为何拿不到 | `CIPPortCompolet`：`EIPPortInformation` 只有 `IPAddress`/`CardId`/`CardName`；`TConnectionPath` 只用于**解析**连接配置对象 | RegisterSession / Forward_Open 由**原生** `CIPCorePort.dll`/`CIPCoreWin32.dll` 完成（本目录没有这两个文件） |
 
 > 说明：`VariableTypeInstanceCJ2`/`NE1S` 是 CJ 系列的解析路径；NJ/NX 走
 > `CipOmronTagInfoService` + `SysmacCipChannel`，但两者都把 CRC 当作"从 PLC 读到的元数据"，
