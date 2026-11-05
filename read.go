@@ -946,6 +946,11 @@ func (client *Client) readList(ctx context.Context, tags []tagDesc) ([]any, erro
 		return nil, fmt.Errorf("wrong Number of Items. Expected 2 but got %v", len(items))
 	}
 	rItem := items[1]
+	// 顶层状态非 0（PLC 直接拒掉整个多服务请求，例如路径不存在）同样是合法应答，
+	// 但只在 status 头之后结束。先按原始字节分类，才能给出类型化错误（见 ciperror.go）。
+	if cipErr, isErrorReply := parseCIPErrorReply(rItem.Data); isErrorReply {
+		return nil, fmt.Errorf("read of %d tags: %w", qty, cipErr)
+	}
 	var reply_hdr msgMultiReadResultHeader
 	//err = binary.Read(&rItem, binary.LittleEndian, &reply_hdr)
 	reply_hdr.SequenceCount, err = rItem.Uint16()
@@ -988,6 +993,11 @@ func (client *Client) readList(ctx context.Context, tags []tagDesc) ([]any, erro
 	for i := 0; i < int(reply_hdr.Reply_Count); i++ {
 		offset := offset_table[i] + 10 // offset doesn't start at 0 in the item
 		myBytes := bytes.NewBuffer(rb[offset:])
+		// 单个 item 的错误应答只有 service+reserved+status+extSize 四个字节，没有类型头，
+		// 按成功的 6 字节结构读会短读成 io.ErrUnexpectedEOF（看起来像连接断了）。
+		if cipErr, isErrorReply := parseMultiReadErrorReply(rb[offset:]); isErrorReply {
+			return nil, fmt.Errorf("read of %v: %w", tags[i].TagName, cipErr)
+		}
 		rHdr := msgMultiReadResult{}
 		err = binary.Read(myBytes, binary.LittleEndian, &rHdr)
 		if err != nil {

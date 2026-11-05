@@ -68,27 +68,43 @@ func IsTagNotFound(err error) bool {
 //	[5]   additional status size (word count)
 //	[6:]  additional status words, then (success replies only) type + data
 const (
-	cipReplyServiceByte   = 2
-	cipReplyStatusByte    = 4
-	cipReplyExtSizeByte   = 5
-	cipReplyExtStatusByte = 6
+	cipReplyServiceByte = 2
+	cipReplyStatusByte  = 4
 )
 
 // parseCIPErrorReply inspects the raw bytes of a connected-mode reply item and
 // reports whether they encode a CIP error reply rather than a successful read
 // result.
+func parseCIPErrorReply(b []byte) (*CIPError, bool) {
+	return parseCIPErrorReplyAt(b, cipReplyServiceByte, cipReplyStatusByte)
+}
+
+// parseMultiReadErrorReply inspects one embedded reply of a Multiple Service
+// Packet (0x0A) response. Those bodies carry no sequence counter:
+//
+//	[0] service code, reply bit set
+//	[1] reserved
+//	[2] general status
+//	[3] additional status size (word count)
+//	[4:] additional status words, then (success replies only) type + data
+func parseMultiReadErrorReply(b []byte) (*CIPError, bool) {
+	return parseCIPErrorReplyAt(b, 0, 2)
+}
+
+// parseCIPErrorReplyAt classifies a reply given the offsets of its service and
+// general status bytes.
 //
 // It only looks at the fixed header bytes, so it works for both short error
 // replies (no additional status) and longer ones that carry additional status
 // words. When an additional status word is present it is decoded into
 // CIPError.Extended, which is what the Logix style 0x1F/0x20 vendor statuses
 // use.
-func parseCIPErrorReply(b []byte) (*CIPError, bool) {
-	if len(b) <= cipReplyStatusByte {
+func parseCIPErrorReplyAt(b []byte, svcOff, statusOff int) (*CIPError, bool) {
+	if len(b) <= statusOff {
 		return nil, false
 	}
 
-	svc := b[cipReplyServiceByte]
+	svc := b[svcOff]
 	// A valid CIP response has the reply bit set. When it is not set the buffer
 	// does not start with a reply at all, so leave it to the normal deserialize
 	// path: genuinely corrupt frames must keep surfacing as transport errors.
@@ -96,17 +112,19 @@ func parseCIPErrorReply(b []byte) (*CIPError, bool) {
 		return nil, false
 	}
 
-	status := CIPStatus(b[cipReplyStatusByte])
+	status := CIPStatus(b[statusOff])
 	// 0x00 is success. 0x06 (PartialTransfer) is a success-shaped reply that
-	// still carries the type header and data; ReadSingleWithContext follows it
-	// up with fragmented reads, so it must never be classified as an error.
+	// still carries the type header and data; the read paths follow it up with
+	// fragmented reads, so it must never be classified as an error.
 	if status == CIPStatus_OK || status == CIPStatus_PartialTransfer {
 		return nil, false
 	}
 
 	cipErr := &CIPError{Code: byte(status)}
-	if len(b) >= cipReplyExtStatusByte+2 && b[cipReplyExtSizeByte] > 0 {
-		cipErr.Extended = binary.LittleEndian.Uint16(b[cipReplyExtStatusByte:])
+	extSizeOff := statusOff + 1
+	extWordOff := statusOff + 2
+	if len(b) >= extWordOff+2 && b[extSizeOff] > 0 {
+		cipErr.Extended = binary.LittleEndian.Uint16(b[extWordOff:])
 	}
 	return cipErr, true
 }

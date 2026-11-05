@@ -214,3 +214,70 @@ func TestNormalReadStillWorks(t *testing.T) {
 		t.Fatalf("读到的值不对: %#v", r.v)
 	}
 }
+
+// multiReadErrorBody 是多服务应答里"某个 item 失败"的 body：
+// service(1) + reserved(1) + general status(1) + ext size(1)，没有类型头和数据。
+func multiReadErrorBody(status byte) []byte {
+	return []byte{byte(CIPService_Read.AsResponse()), 0x00, status, 0x00}
+}
+
+// 批量读（多服务）里某个 tag 不存在时，PLC 的顶层状态是成功、只有该 item 是
+// 4 字节的错误应答。按成功的 6 字节结构去读会短读成 io.ErrUnexpectedEOF，
+// 于是同样会被误判成连接失效。
+func TestReadListUnknownTagReturnsTypedCIPError(t *testing.T) {
+	client, fs := newFakeCIPClient(t)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.readList(context.Background(), []tagDesc{
+			{TagName: "GoodTag", TagType: CIPTypeDINT, Elements: 1},
+			{TagName: "MissingTag", TagType: CIPTypeDINT, Elements: 1},
+		})
+		done <- err
+	}()
+
+	req := fs.awaitRequest(time.Second)
+	fs.replyMultiRead(req.seq, [][]byte{
+		multiReadReplyBody(CIPTypeDINT, 0, []byte{0x2A, 0x00, 0x00, 0x00}),
+		multiReadErrorBody(byte(CIPStatus_PathDestinationUnknown)),
+	})
+
+	err := <-done
+	if err == nil {
+		t.Fatal("批量读里出现不存在的 tag 应当报错")
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("不应伪装成传输层短读（会被判连接失效）: %v", err)
+	}
+	if !IsTagNotFound(err) {
+		t.Errorf("应能识别 tag 不存在: %v", err)
+	}
+}
+
+// 顶层状态非 0（PLC 直接拒掉整个多服务请求）也应给出类型化错误。
+func TestReadListTopLevelCIPErrorIsTyped(t *testing.T) {
+	client, fs := newFakeCIPClient(t)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.readList(context.Background(), []tagDesc{
+			{TagName: "MissingTag", TagType: CIPTypeDINT, Elements: 1},
+		})
+		done <- err
+	}()
+
+	req := fs.awaitRequest(time.Second)
+	fs.sendFrame(cipCommandSendUnitData,
+		buildConnectedReply(req.seq, 0x00112233, CIPService_MultipleService, byte(CIPStatus_PathDestinationUnknown), nil))
+
+	err := <-done
+	if err == nil {
+		t.Fatal("顶层错误状态应当报错")
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("不应伪装成传输层短读: %v", err)
+	}
+	if !IsTagNotFound(err) {
+		t.Errorf("应能识别 tag 不存在: %v", err)
+	}
+}
