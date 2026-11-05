@@ -63,8 +63,13 @@
 | **整体**访问 BOOL 数组 | `ceil(n/16)*2`：**位打包进 WORD**（16 bit/WORD） | **`0xFF`（不是 C1）** | `[DLL]` `CipOmronDataConverter.BoolsToBitArray`：当 `IsArray && Type==0xC1` 时**把请求类型改写成 0xFF**；`BitArrayToWordData`/`WordDataToBitArray` 做 16 位打包 |
 
 ⚠️ 上表第三行是最容易踩的：**客户端主动把类型写成 0xFF**，而不是 0xC1——这样 PLC 才按位打包
-返回。gologix 若要支持"整体读 BOOL 数组"，必须照做（旧 `boolSize=2` 的实现里没有这个 0xFF 改写，
-所以它读出来的东西未必对）。
+返回。gologix 的 Omron 方言已按此实现：整体读按**应答长度自适应**（n 字节=每元素 1 状态字节 /
+2n 字节=status+forced / `ceil(n/16)*2` 字节=16 位字位打包，其它长度明确报错），整体写发
+`0xFF + addInfoLen 0 + elements + 位打包数据`。
+
+⚠️ **0xFF 冲突坑**：本库把 `0xFF` 用作 Logix 的 STRING 标记（`CIPTypeSTRING = 0xFF`），共享的
+写 footer 会对它发出 `A0 02 <CRC>` 结构体头。Omron 位数组必须**手写 footer**
+（`FF 00 <elements:u16>`），否则线上会变成 Logix STRING 结构体写。
 
 ⚠️ `Num of Element = 1` 时 §7-6-1 与 §7-7-4 描述冲突（2 字节 vs 1 字节），实机需确认。
 
@@ -118,10 +123,10 @@
 | **可选 P0** | **走 UCMM 而不是 Class 3** | 见 §6.2：`OmronEipReader.dll` 只用 UCMM 就能读写 NJ/NX 标量，**完全绕开连接路径与 1994 协商**（单消息 ≤502 B）。若目标是"先能读写"，这是成本最低的路线；Class 3 可后补 |
 | — | 路径段/服务码/响应形状 | **不需要改** |
 
-> **实现状态（2026-11）**：`DialectOmron`（Class 3）已落地 P0——连接期（空连接路径 +
-> `ConnectionSize` 1994）、单 BOOL 写 2 字节 `{status,0}`、tag 名保持大小写。尚未实现：
-> 整体 BOOL 数组（类型 0xFF + 16 bit/WORD 打包，需实机确认请求形态）、结构体（需先实现
-> TagInfo 查询拿 CRC 与成员链）。入口：`client.UseOmron()` / `UseOmronWithOptions()`。
+> **实现状态（2026-11）**：`DialectOmron`（Class 3）已落地——连接期（空连接路径 +
+> `ConnectionSize` 1994）、单 BOOL 写 2 字节 `{status,0}`、整体 BOOL 数组（写 `0xFF` + 16 位字打包；
+> 读按应答长度自适应解析）、tag 名保持大小写。尚未实现：结构体（需先实现 TagInfo 查询拿 CRC 与
+> 成员链）。入口：`client.UseOmron()` / `UseOmronWithOptions()`。
 
 ---
 

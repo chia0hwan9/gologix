@@ -259,12 +259,11 @@ func (client *Client) write_single(ctx context.Context, tag string, value any) e
 		datatype = invType
 	}
 	if client.isOmron() {
-		// GoVarToCIPType resolves []bool to a struct, which the Omron
-		// controllers do not accept. A whole BOOL array would have to be sent
-		// as the vendor bit array type 0xFF with 16 bit/WORD packing, and that
-		// layout is not verified against hardware yet.
+		// A whole BOOL array is sent as the vendor bit array type 0xFF with the
+		// bits packed 16 per WORD (Compolet BoolsToBitArray); GoVarToCIPType
+		// would otherwise resolve []bool to a struct.
 		if _, isBools := value.([]bool); isBools {
-			return fmt.Errorf("writing BOOL array tag %s: the Omron bit array layout (type 0x%02X, 16 bit/WORD packing) is not verified against hardware yet; write the elements individually instead", tag, byte(omronTypeBitArray))
+			datatype = omronTypeBitArray
 		}
 	}
 	ioi, err := client.newIOI(tag, datatype)
@@ -301,7 +300,15 @@ func (client *Client) write_single(ctx context.Context, tag string, value any) e
 		return fmt.Errorf("problem serializing ioi buffer. %w", err)
 	}
 
-	err = reqitems[1].Serialize(ioi_footer)
+	if client.isOmron() && datatype == omronTypeBitArray {
+		// 0xFF is also this library's Logix STRING marker, so the shared footer
+		// would emit a Logix struct header (A0 02 <CRC>) for it. Write the
+		// Omron footer by hand: data type, addInfoLength 0, element count.
+		footer := []byte{byte(omronTypeBitArray), 0x00, byte(elements), byte(elements >> 8)}
+		err = reqitems[1].Serialize(footer)
+	} else {
+		err = reqitems[1].Serialize(ioi_footer)
+	}
 	if err != nil {
 		return fmt.Errorf("problem serializing ioi footer. %w", err)
 	}

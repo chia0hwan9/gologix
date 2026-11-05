@@ -140,9 +140,9 @@ func (client *Client) ReadWithContext(ctx context.Context, tag string, data any)
 		}
 		if client.isOmron() {
 			// A whole BOOL array is transmitted as a vendor bit array (type
-			// 0xFF) packed 16 bits per WORD, but the request shape that makes
-			// an NJ/NX return it that way is not verified against hardware yet.
-			return fmt.Errorf("reading BOOL array tag %s: the Omron bit array layout (type 0x%02X, 16 bit/WORD packing) is not verified against hardware yet; read the elements individually instead", tag, byte(omronTypeBitArray))
+			// 0xFF) packed 16 bits per WORD; omronReadBoolSlice decodes the
+			// reply by its length. See docs/omron-nx-nj-eip.md.
+			return client.omronReadBoolSlice(ctx, tag, data)
 		}
 		elements := len(data)
 		count := elements / 32

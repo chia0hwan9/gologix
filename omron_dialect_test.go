@@ -206,18 +206,105 @@ func TestOmronReadBoolReadsStatusByte(t *testing.T) {
 	}
 }
 
-func TestOmronWholeBoolArrayIsRejected(t *testing.T) {
-	client, _ := newFakeCIPClient(t)
+// A whole BOOL array can come back in three shapes; the decoder picks the one
+// that matches the reply length.
+func TestOmronReadBoolArrayLayouts(t *testing.T) {
+	cases := []struct {
+		name  string
+		n     int
+		reply []byte
+		want  []bool
+	}{
+		{
+			name:  "bit array 16 bits per word",
+			n:     32,
+			reply: []byte{0x01, 0x00, 0x01, 0x00}, // bit 0 of word 0 and word 1
+			want:  []bool{true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true},
+		},
+		{
+			name:  "one status byte per element",
+			n:     4,
+			reply: []byte{0x01, 0x00, 0x01, 0x00},
+			want:  []bool{true, false, true, false},
+		},
+		{
+			name:  "two bytes per element",
+			n:     2,
+			reply: []byte{0x01, 0x00, 0x00, 0x00},
+			want:  []bool{true, false},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, fs := newFakeCIPClient(t)
+			if err := client.UseOmron(); err != nil {
+				t.Fatalf("UseOmron: %v", err)
+			}
+			bools := make([]bool, tc.n)
+			done := make(chan error, 1)
+			go func() {
+				done <- client.Read("MyBools", bools)
+			}()
+			req := fs.awaitRequest(time.Second)
+			if req.elements != uint16(tc.n) {
+				t.Errorf("elements = %d, want %d", req.elements, tc.n)
+			}
+			fs.replyConnectedRead(req.service, req.seq, 0x00, CIPTypeBOOL, tc.reply)
+			if err := <-done; err != nil {
+				t.Fatalf("Read: %v", err)
+			}
+			for i, want := range tc.want {
+				if bools[i] != want {
+					t.Errorf("element %d = %v, want %v", i, bools[i], want)
+				}
+			}
+		})
+	}
+}
+
+func TestOmronReadBoolArrayUnknownLengthIsRejected(t *testing.T) {
+	client, fs := newFakeCIPClient(t)
 	if err := client.UseOmron(); err != nil {
 		t.Fatalf("UseOmron: %v", err)
 	}
-
-	bools := make([]bool, 32)
-	if err := client.Read("MyBools", bools); err == nil || !strings.Contains(err.Error(), "bit array layout") {
-		t.Errorf("Read of a whole BOOL array should be rejected with a clear error, got %v", err)
+	bools := make([]bool, 3)
+	done := make(chan error, 1)
+	go func() {
+		done <- client.Read("MyBools", bools)
+	}()
+	req := fs.awaitRequest(time.Second)
+	fs.replyConnectedRead(req.service, req.seq, 0x00, CIPTypeBOOL, []byte{1, 0, 1, 0, 1})
+	err := <-done
+	if err == nil || !strings.Contains(err.Error(), "none of the known layouts") {
+		t.Errorf("unexpected reply length should be reported, got %v", err)
 	}
-	if err := client.Write("MyBools", bools); err == nil || !strings.Contains(err.Error(), "bit array layout") {
-		t.Errorf("Write of a whole BOOL array should be rejected with a clear error, got %v", err)
+}
+
+// A whole BOOL array is written as the vendor bit array type with 16 bit/WORD
+// packing.
+func TestOmronWriteBoolArrayUsesBitArrayType(t *testing.T) {
+	client, fs := newFakeCIPClient(t)
+	if err := client.UseOmron(); err != nil {
+		t.Fatalf("UseOmron: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- client.Write("MyBools", []bool{true, false, false, true})
+	}()
+	req := fs.awaitRequest(time.Second)
+	got := parseOmronWriteRequest(t, req)
+	if got.dataType != uint16(omronTypeBitArray) {
+		t.Errorf("data type = 0x%02X, want 0x%02X", got.dataType, byte(omronTypeBitArray))
+	}
+	if got.elements != 4 {
+		t.Errorf("elements = %d, want 4", got.elements)
+	}
+	if want := []byte{0x09, 0x00}; !bytes.Equal(got.value, want) {
+		t.Errorf("payload = % X, want % X", got.value, want)
+	}
+	fs.replyConnectedWrite(req.service, req.seq)
+	if err := <-done; err != nil {
+		t.Fatalf("Write: %v", err)
 	}
 }
 
