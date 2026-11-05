@@ -117,6 +117,9 @@ type Client struct {
 
 	// Inovance carries the options used when Dialect is DialectInovance.
 	Inovance InovanceOptions
+
+	// Omron carries the options used when Dialect is DialectOmron.
+	Omron OmronOptions
 }
 
 // NewClient creates a new PLC client with reasonable defaults for the given IP address.

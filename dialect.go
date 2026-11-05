@@ -1,6 +1,9 @@
 package gologix
 
-import "fmt"
+import (
+	"bytes"
+	"fmt"
+)
 
 // Dialect selects the tag, encoding and data layout semantics used by a Client.
 //
@@ -8,7 +11,9 @@ import "fmt"
 // library had before the dialect switch existed. DialectInovance enables the
 // Inovance (汇川) EIP tag semantics described by "EIP 标签通信库使用说明"
 // V2.0.2.8, which differ from Rockwell/Allen-Bradley in the STRING/STRUCT type
-// codes and in the BOOL/struct alignment rules.
+// codes and in the BOOL/struct alignment rules. DialectOmron enables the
+// OMRON NJ/NX semantics described by the W506 manual and confirmed against the
+// OMRON Compolet assemblies (see docs/omron-nx-nj-eip.md).
 type Dialect int
 
 const (
@@ -16,6 +21,8 @@ const (
 	DialectLogix Dialect = iota
 	// DialectInovance enables the Inovance EIP tag semantics.
 	DialectInovance
+	// DialectOmron enables the OMRON NJ/NX EIP tag semantics.
+	DialectOmron
 )
 
 func (d Dialect) String() string {
@@ -24,6 +31,8 @@ func (d Dialect) String() string {
 		return "logix"
 	case DialectInovance:
 		return "inovance"
+	case DialectOmron:
+		return "omron"
 	default:
 		return fmt.Sprintf("dialect(%d)", int(d))
 	}
@@ -98,9 +107,60 @@ func (client *Client) UseInovance(align InovanceAlign) error {
 	return nil
 }
 
+// OmronOptions carries the options used when Client.Dialect is DialectOmron.
+// The zero value is the recommended configuration.
+type OmronOptions struct {
+	// ConnectionSize overrides the Large_Forward_Open size. Zero means the
+	// NJ/NX default of 1994 bytes (an NX701 would allow 8192). The value must
+	// stay at or below what the controller accepts, otherwise Forward_Open
+	// fails.
+	ConnectionSize uint16
+
+	// KeepTagCase is accepted for symmetry with InovanceOptions but has no
+	// effect: the Omron dialect always sends the tag name as written, because
+	// Sysmac Studio variable names are case sensitive.
+	KeepTagCase bool
+}
+
+// UseOmron switches the client to the OMRON NJ/NX dialect.
+//
+// It also applies the two connection level differences from Rockwell:
+//
+//   - the connection path is cleared, because an NJ/NX has no backplane/slot
+//     and Forward_Open must address the message router directly;
+//   - ConnectionSize is lowered to 1994 bytes, the NJ/NX Large_Forward_Open
+//     limit (an NX701 allows 8192; use UseOmronWithOptions for that).
+//
+// Call it before Connect. A ConnectionSize set afterwards is left alone.
+func (client *Client) UseOmron() error {
+	return client.UseOmronWithOptions(OmronOptions{})
+}
+
+// UseOmronWithOptions is UseOmron with explicit options.
+func (client *Client) UseOmronWithOptions(opts OmronOptions) error {
+	client.Dialect = DialectOmron
+	client.Omron = opts
+
+	// No backplane: the Forward_Open connection path must be empty so that it
+	// addresses the message router (20 02 24 01) directly.
+	client.Controller.Path = &bytes.Buffer{}
+
+	if opts.ConnectionSize > 0 {
+		client.ConnectionSize = opts.ConnectionSize
+	} else {
+		client.ConnectionSize = omronConnectionSize
+	}
+	return nil
+}
+
 // isInovance reports whether the client must use Inovance semantics.
 func (client *Client) isInovance() bool {
 	return client.Dialect == DialectInovance
+}
+
+// isOmron reports whether the client must use OMRON NJ/NX semantics.
+func (client *Client) isOmron() bool {
+	return client.Dialect == DialectOmron
 }
 
 // inovanceAlign returns the alignment mode in effect for this client.
@@ -115,5 +175,9 @@ func (client *Client) inovanceAlign() InovanceAlign {
 // The default (false) preserves the library's historical behaviour of lower
 // casing every tag path before building an IOI.
 func (client *Client) keepTagCase() bool {
+	if client.isOmron() {
+		// Sysmac Studio variable names are case sensitive.
+		return true
+	}
 	return client.Dialect == DialectInovance && client.Inovance.KeepTagCase
 }

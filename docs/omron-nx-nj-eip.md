@@ -118,6 +118,11 @@
 | **可选 P0** | **走 UCMM 而不是 Class 3** | 见 §6.2：`OmronEipReader.dll` 只用 UCMM 就能读写 NJ/NX 标量，**完全绕开连接路径与 1994 协商**（单消息 ≤502 B）。若目标是"先能读写"，这是成本最低的路线；Class 3 可后补 |
 | — | 路径段/服务码/响应形状 | **不需要改** |
 
+> **实现状态（2026-11）**：`DialectOmron`（Class 3）已落地 P0——连接期（空连接路径 +
+> `ConnectionSize` 1994）、单 BOOL 写 2 字节 `{status,0}`、tag 名保持大小写。尚未实现：
+> 整体 BOOL 数组（类型 0xFF + 16 bit/WORD 打包，需实机确认请求形态）、结构体（需先实现
+> TagInfo 查询拿 CRC 与成员链）。入口：`client.UseOmron()` / `UseOmronWithOptions()`。
+
 ---
 
 ## 5. 未验证清单
@@ -214,4 +219,4 @@
 | 读响应/结构体 CRC | `read.go` `msgCIPReadResultData`、`cipStructHeader` |
 | 类型编码（CIP CRC 算法） | `pack.go` `TypeEncode` |
 | CIP 错误分类 | `ciperror.go`、`errors.go` |
-| 方言机制 | `dialect.go`、`inovance_*.go` |
+| 方言机制 | `dialect.go`（`DialectOmron`/`UseOmron`/`OmronOptions`）、`omron.go`、`inovance_*.go` |

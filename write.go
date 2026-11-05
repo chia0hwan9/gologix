@@ -135,6 +135,13 @@ func (client *Client) write_udt(ctx context.Context, tag string, value any) erro
 		// writes are the P2 item of the Inovance plan.
 		return fmt.Errorf("writing struct tag %s: Inovance struct layout writes are not implemented yet; write the members individually for now", tag)
 	}
+	if client.isOmron() {
+		// The Omron struct write needs the structure definition CRC, which the
+		// controller publishes in its variable type object (see
+		// docs/omron-nx-nj-eip.md). Until that lookup is implemented, sending
+		// the Rockwell type encoding CRC would be rejected by the PLC.
+		return fmt.Errorf("writing struct tag %s: Omron struct writes are not implemented yet (they need the CRC published by the controller's variable type object); write the members individually for now", tag)
+	}
 	//service = 0x4D // cipService_Write
 	datatype := CIPTypeStruct
 	ioi, err := client.newIOI(tag, datatype)
@@ -251,6 +258,15 @@ func (client *Client) write_single(ctx context.Context, tag string, value any) e
 		}
 		datatype = invType
 	}
+	if client.isOmron() {
+		// GoVarToCIPType resolves []bool to a struct, which the Omron
+		// controllers do not accept. A whole BOOL array would have to be sent
+		// as the vendor bit array type 0xFF with 16 bit/WORD packing, and that
+		// layout is not verified against hardware yet.
+		if _, isBools := value.([]bool); isBools {
+			return fmt.Errorf("writing BOOL array tag %s: the Omron bit array layout (type 0x%02X, 16 bit/WORD packing) is not verified against hardware yet; write the elements individually instead", tag, byte(omronTypeBitArray))
+		}
+	}
 	ioi, err := client.newIOI(tag, datatype)
 	if err != nil {
 		return fmt.Errorf("problem generating IOI. %w", err)
@@ -292,6 +308,9 @@ func (client *Client) write_single(ctx context.Context, tag string, value any) e
 
 	if client.isInovance() {
 		err = client.invSerializeValue(&reqitems[1], tag, value, datatype)
+	} else if client.isOmron() {
+		// Omron BOOLs are two bytes: status plus forced set/reset.
+		err = omronSerializeValue(&reqitems[1], value)
 	} else {
 		err = reqitems[1].Serialize(value)
 	}
