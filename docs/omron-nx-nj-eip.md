@@ -82,7 +82,7 @@
 | 1 | 🔴 **连接路径必须清空 slot** | NJ/NX 无 backplane/slot；`[DLL]` Forward_Open 只带 `TConnectionPath` + RPI 参数（**确切字节在原生层拼装，托管程序集里看不到**，见 §6 末行） | gologix `NewClient` 默认 `Controller.Path = ParsePath("1,0")`，必须 `client.Controller.Path = &bytes.Buffer{}`（此时 Forward_Open 的 path 正好是 `20 02 24 01`） |
 | 2 | 🔴 **连接尺寸上限** | §7-1-2：UCMM 502 B；Class 3 `Forward_Open` 502 B；`Large_Forward_Open`：NX701 8192 B，其余 1994 B | gologix 默认 4000 → Large 被拒 → 回退 511（仍 > 502）→ 连接失败。必须显式设 ≤1994 或 ≤502 |
 | 3 | ✅ **无 Electronic Key** | `[DLL]` 无该字段 | 无需改动 |
-| 4 | ⚠️ UCMM 可绕开 1、2 | §7-1-2 | 作为"连接期风险最小"的备选方案 |
+| 4 | ⚠️ **UCMM 可用，且是最简路径** | §7-1-2 支持 UCMM；`[DLL]` `OmronEipReader.dll` 的 `EipClient` **只走 UCMM**（`CMD_SEND_RR = 0x006F`，无 Forward_Open） | 可绕开 slot path 与 1994 协商（代价：单消息 ≤502 B）。实现成本最低，见 §6.2 |
 
 ### 3.2 数据层差异
 
@@ -115,7 +115,7 @@
 | P2 | tag 枚举 | 实现 TagInfo/TagName 服务（替代 Logix 的 0x6B） |
 | P2 | 原生 STRING | `0xD0 + dataLen(2) + data`（格式已明确）；仍建议优先 `ARRAY OF BYTE` |
 | P2 | 错误码对照表 | Omron 扩展状态码 → gologix 错误文案 |
-| 备选 | UCMM | 绕开 slot path 与尺寸协商（单消息 ≤502 B） |
+| **可选 P0** | **走 UCMM 而不是 Class 3** | 见 §6.2：`OmronEipReader.dll` 只用 UCMM 就能读写 NJ/NX 标量，**完全绕开连接路径与 1994 协商**（单消息 ≤502 B）。若目标是"先能读写"，这是成本最低的路线；Class 3 可后补 |
 | — | 路径段/服务码/响应形状 | **不需要改** |
 
 ---
@@ -176,6 +176,29 @@
 
 注意：该网关自身**没有** CIP 报文级代码（Forward_Open/RegisterSession 全走 Compolet 的
 `ReadRawData`/`WriteRawData`），所以连接路径的确切字节仍然拿不到。
+
+### 6.2 参考实现：OmronEipReader.dll（纯 .NET，只走 UCMM）
+
+第三方 `OmronEipReader.dll`（26 KB，`EipClient` + `CipService` + `CipDataTypeHelper` +
+`OmronTagReader`）是一份**完整的报文级实现**，补上了网关和 Compolet 都没有的报文细节：
+
+| 关注点 | 事实 |
+|---|---|
+| 传输方式 | **只用 UCMM**：`EipClient` 的常量只有 `CMD_REGISTER=0x0065`、`CMD_UNREGISTER=0x0066`、`CMD_SEND_RR=0x006F`、`HEADER_SIZE=0x18`；**没有 Forward_Open** |
+| UCMM 帧（`SendCipMessage`） | 24 字节封装头 + CPF：`InterfaceHandle=0`(4) + `Timeout=0x000A`(2) + `ItemCount=2`(2) + `Null Address Item (0x0000, len 0)` + `Unconnected Data Item (0x00B2, len, CIP 请求)`；**无路由路径** |
+| 读请求 | `0x4C` + `pathSize` + 路径 + `elements`(u16) |
+| 写请求 | `0x4D` + `pathSize` + 路径 + **`dataType`(u16，高字节即 addInfoLen=0)** + `elements`(u16) + 数据 |
+| 读响应 | `service` + `reserved` + `status` + `extSize`(1 字节，单位=字) + `extStatus`(extSize×2) + `type` + `[typeInfo]` + 数据；**先判 status 再解析数据** |
+| **BOOL 写** | `EncodeValue(BOOL)` → **`new byte[2]`，`[0]=0/1`，`[1]=0`** —— 与手册、`OmronBoolType`、Sineva 网关**四方一致** |
+| BOOL 解码 | `GetSize(BOOL)=1` —— 只用于**解码**（响应首字节就是 status，读 1 字节足够） |
+| 路径 | `0x91` + 长度 + **ASCII** 名 + 奇数补 0；**不支持 `.` 成员与 `[n]` 下标**（整串当一个符号段） |
+| 类型码 | `0xC1`–`0xCB`、`0xD0`、`0xD1`–`0xD4`、`0xDB`，与手册一致；`FromSysmacTypeName` 把 Sysmac 类型名映射成码 |
+| 标签定义来源 | **不查 PLC**：`VariableFileParser.ParseFile` / `ParseCxDesignerTxt` 解析 **CX-Designer / Sysmac Studio 导出的制表符文本**（按 `RW`/`IN`/`OUT` 过滤） |
+| 状态文案 | `GetCipStatusMessage`：0x00–0x26 的 CIP 状态文本表 |
+| 不支持 | 结构体（无 addInfo/CRC）、成员/数组寻址、Class 3、TagInfo 服务 |
+
+**对 gologix 的意义**：① 证明 NJ/NX 上 **UCMM 完全可用**，可把"连接期风险"直接绕掉；② BOOL
+写 2 字节再获一重独立确认；③ 标签定义可以先从配置文件来（不必先实现 TagInfo 链）。
 
 ---
 
