@@ -1073,6 +1073,27 @@ func (client *Client) readList(ctx context.Context, tags []tagDesc) ([]any, erro
 				}
 			}
 
+		} else if client.isOmron() && rHdr.Type == omronTypeBitArray {
+			// A whole BOOL array comes back as the vendor bit array type: the
+			// bits are packed 16 per WORD, low bit first. 0xFF is also this
+			// library's Logix STRING marker, so this branch must come before
+			// the STRING one (Omron STRING responses use 0xD0).
+			words := (int(tags[i].Elements) + omronBitsPerWord - 1) / omronBitsPerWord
+			raw := make([]byte, words*2)
+			if err := binary.Read(myBytes, binary.LittleEndian, raw); err != nil {
+				return nil, fmt.Errorf("problem reading tag %v: bit array needs %d bytes: %w", tags[i], words*2, err)
+			}
+			packed := make([]uint16, words)
+			for k := range packed {
+				packed[k] = binary.LittleEndian.Uint16(raw[k*2:])
+			}
+			bools := make([]bool, tags[i].Elements)
+			invUnpackBoolWords(packed, bools)
+			val := make([]any, len(bools))
+			for k, b := range bools {
+				val[k] = b
+			}
+			result_values[i] = val
 		} else if tags[i].TagType == CIPTypeSTRING {
 			// multi-element STRING array. Each element is a fixed 88-byte slot
 			// (cipStringHeader + 82 bytes of data) regardless of the actual

@@ -308,6 +308,61 @@ func TestOmronWriteBoolArrayUsesBitArrayType(t *testing.T) {
 	}
 }
 
+// The batch (multiple service) path must decode a bit array response too: the
+// controller reports it as type 0xFF, which is also this library's Logix
+// STRING marker, so readList needs an explicit Omron branch.
+func TestOmronReadListBoolArrayBitPacked(t *testing.T) {
+	client, fs := newFakeCIPClient(t)
+	if err := client.UseOmron(); err != nil {
+		t.Fatalf("UseOmron: %v", err)
+	}
+
+	done := make(chan struct {
+		vals []any
+		err  error
+	}, 1)
+	go func() {
+		vals, err := client.readList(context.Background(), []tagDesc{
+			{TagName: "MyBools", TagType: CIPTypeBOOL, Elements: 32},
+		})
+		done <- struct {
+			vals []any
+			err  error
+		}{vals, err}
+	}()
+
+	req := fs.awaitRequest(time.Second)
+	// word 0 bit 0 and word 1 bit 0 set
+	fs.replyMultiRead(req.seq, [][]byte{
+		multiReadReplyBody(omronTypeBitArray, 0, []byte{0x01, 0x00, 0x01, 0x00}),
+	})
+
+	r := <-done
+	if r.err != nil {
+		t.Fatalf("readList: %v", r.err)
+	}
+	if len(r.vals) != 1 {
+		t.Fatalf("got %d results, want 1", len(r.vals))
+	}
+	got, ok := r.vals[0].([]any)
+	if !ok {
+		t.Fatalf("result = %T, want []any", r.vals[0])
+	}
+	if len(got) != 32 {
+		t.Fatalf("got %d bools, want 32", len(got))
+	}
+	for i, v := range got {
+		b, ok := v.(bool)
+		if !ok {
+			t.Fatalf("element %d = %T, want bool", i, v)
+		}
+		want := i == 0 || i == 16
+		if b != want {
+			t.Errorf("element %d = %v, want %v", i, b, want)
+		}
+	}
+}
+
 func TestOmronStructWriteIsRejected(t *testing.T) {
 	client, _ := newFakeCIPClient(t)
 	if err := client.UseOmron(); err != nil {
