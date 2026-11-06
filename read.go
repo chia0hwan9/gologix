@@ -426,6 +426,19 @@ func (client *Client) ReadSingle(tag string, datatype CIPType, elements uint16) 
 
 // ReadSingleWithContext is Read_single with a caller-supplied context.
 func (client *Client) ReadSingleWithContext(ctx context.Context, tag string, datatype CIPType, elements uint16) (any, error) {
+	if datatype == CIPTypeStruct {
+		// Whole struct reads are decoded with the Rockwell layout that Unpack
+		// implements. Omron member sizes and offsets come from the controller's
+		// variable type object (a BOOL member can be two bytes there), and
+		// Inovance answers with its own 0xA2 struct code, so both dialects
+		// reject the whole tag instead of silently returning a wrong layout.
+		switch {
+		case client.isOmron():
+			return nil, fmt.Errorf("reading struct tag %s: the Omron dialect does not implement struct layout yet (member sizes come from the controller's variable type object); read the members individually", tag)
+		case client.isInovance():
+			return nil, fmt.Errorf("reading struct tag %s: the Inovance dialect does not implement struct layout yet; read the members individually", tag)
+		}
+	}
 
 	err := client.checkConnection()
 	if err != nil {

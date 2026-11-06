@@ -363,6 +363,36 @@ func TestOmronReadListBoolArrayBitPacked(t *testing.T) {
 	}
 }
 
+// Whole struct reads are only decoded with the Rockwell layout, so the Omron
+// and Inovance dialects must reject them up front instead of returning data
+// decoded with the wrong member layout.
+func TestStructReadIsRejectedForNonLogixDialects(t *testing.T) {
+	type myUDT struct {
+		A int32
+		B int16
+	}
+	for _, tc := range []struct {
+		name  string
+		setup func(*Client) error
+		want  string
+	}{
+		{"omron", func(c *Client) error { return c.UseOmron() }, "Omron dialect does not implement struct layout"},
+		{"inovance", func(c *Client) error { return c.UseInovance(AlignDefault) }, "Inovance dialect does not implement struct layout"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, _ := newFakeCIPClient(t)
+			if err := tc.setup(client); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+			var u myUDT
+			err := client.Read("MyUDT", &u)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("Read of a struct should be rejected with %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func TestOmronStructWriteIsRejected(t *testing.T) {
 	client, _ := newFakeCIPClient(t)
 	if err := client.UseOmron(); err != nil {

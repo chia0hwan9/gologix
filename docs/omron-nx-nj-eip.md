@@ -125,8 +125,9 @@
 
 > **实现状态（2026-11）**：`DialectOmron`（Class 3）已落地——连接期（空连接路径 +
 > `ConnectionSize` 1994）、单 BOOL 写 2 字节 `{status,0}`、整体 BOOL 数组（写 `0xFF` + 16 位字打包；
-> 读按应答长度自适应解析）、tag 名保持大小写。尚未实现：结构体（需先实现 TagInfo 查询拿 CRC 与
-> 成员链）。入口：`client.UseOmron()` / `UseOmronWithOptions()`。
+> 读按应答长度自适应解析）、tag 名保持大小写。**结构体读写明确拒绝**（读在发请求前就报错，因为
+> Omron 的结构体响应同样是 `0xA0`，按 Logix 布局解包会静默返回错误数据）；尚未实现：结构体
+> （需先实现 TagInfo 查询拿 CRC 与成员链）。入口：`client.UseOmron()` / `UseOmronWithOptions()`。
 
 ---
 
